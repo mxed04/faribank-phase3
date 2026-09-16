@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * Support ticket domain entity for tracking user problems and support answers.
+ * Support ticket and KYC verification domain entity.
  */
 public class Ticket {
     private final String ticketId;
@@ -19,11 +19,11 @@ public class Ticket {
 
     public Ticket(String ticketId, String userPhoneNumber, TicketSection section,
                   String text, Instant createdAt) {
-        if (ticketId == null || ticketId.isBlank()) {
+        if (ticketId == null || ticketId.trim().isEmpty()) {
             throw new ValidationException("Ticket ID cannot be empty.");
         }
-        if (userPhoneNumber == null || userPhoneNumber.isBlank()) {
-            throw new ValidationException("User phone number cannot be empty.");
+        if (userPhoneNumber == null || userPhoneNumber.trim().isEmpty()) {
+            throw new ValidationException("User phone cannot be empty.");
         }
         if (text == null || text.trim().isEmpty()) {
             throw new ValidationException("Ticket text cannot be empty.");
@@ -32,7 +32,7 @@ public class Ticket {
         this.userPhoneNumber = userPhoneNumber.trim();
         this.section = Objects.requireNonNull(section, "Ticket section cannot be null.");
         this.text = text.trim();
-        this.createdAt = Objects.requireNonNull(createdAt, "Created timestamp cannot be null.");
+        this.createdAt = Objects.requireNonNull(createdAt, "Creation timestamp cannot be null.");
         this.status = TicketStatus.REGISTERED;
         this.supportReply = "";
     }
@@ -45,11 +45,19 @@ public class Ticket {
         return userPhoneNumber;
     }
 
+    public String getUserPhone() {
+        return userPhoneNumber;
+    }
+
     public TicketSection getSection() {
         return section;
     }
 
     public String getText() {
+        return text;
+    }
+
+    public String getDescription() {
         return text;
     }
 
@@ -62,14 +70,26 @@ public class Ticket {
     }
 
     public void setStatus(TicketStatus status) {
-        this.status = Objects.requireNonNull(status, "Ticket status cannot be null.");
+        this.status = Objects.requireNonNull(status, "Status cannot be null.");
     }
 
     public String getSupportReply() {
         return supportReply;
     }
 
-    public void setSupportReply(String supportReply) {
-        this.supportReply = supportReply != null ? supportReply.trim() : "";
+    public void setSupportReply(String reply) {
+        this.supportReply = reply != null ? reply.trim() : "";
+    }
+
+    public String getReply() {
+        return supportReply;
+    }
+
+    public void setReply(String reply) {
+        setSupportReply(reply);
+    }
+
+    public boolean isKycRequest() {
+        return section == TicketSection.AUTH;
     }
 }

@@ -1,10 +1,11 @@
 package ir.ac.kntu.domain.ticket;
 
 /**
- * Lifecycle statuses of customer support tickets.
+ * Lifecycle status of customer support tickets and KYC requests.
  */
 public enum TicketStatus {
     REGISTERED,
     IN_PROGRESS,
+    APPROVED,
     CLOSED
 }
