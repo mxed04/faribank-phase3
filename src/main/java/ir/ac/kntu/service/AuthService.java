@@ -2,6 +2,9 @@ package ir.ac.kntu.service;
 
 import ir.ac.kntu.domain.account.Account;
 import ir.ac.kntu.domain.account.CreditCard;
+import ir.ac.kntu.domain.ticket.Ticket;
+import ir.ac.kntu.domain.ticket.TicketSection;
+import ir.ac.kntu.domain.user.AdminUser;
 import ir.ac.kntu.domain.user.Customer;
 import ir.ac.kntu.domain.user.KycStatus;
 import ir.ac.kntu.domain.user.SupportUser;
@@ -9,51 +12,76 @@ import ir.ac.kntu.exception.AuthenticationException;
 import ir.ac.kntu.exception.UserAlreadyExistsException;
 import ir.ac.kntu.exception.ValidationException;
 import ir.ac.kntu.repository.AccountRepository;
+import ir.ac.kntu.repository.TicketRepository;
 import ir.ac.kntu.repository.UserRepository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Handles registration, authentication, and customer KYC lifecycle management.
+ * Service orchestrating authentication, user verification, and automatic KYC ticket issuance.
  */
 public class AuthService {
-    private static final String AUTH_ERR = "Invalid phone number or password.";
-    private static final long CARD_PREFIX = 6037990000000000L;
-    private static final long ACC_PREFIX = 100000L;
+    private static final AtomicLong ACC_COUNTER = new AtomicLong(100001);
+    private static final AtomicLong TICKET_COUNTER = new AtomicLong(1001);
 
     private final UserRepository userRepo;
     private final AccountRepository accountRepo;
-    private final AtomicLong accountCounter = new AtomicLong(ACC_PREFIX);
-    private final AtomicLong cardCounter = new AtomicLong(CARD_PREFIX);
+    private final TicketRepository ticketRepo;
 
     public AuthService(UserRepository userRepo, AccountRepository accountRepo) {
-        this.userRepo = Objects.requireNonNull(userRepo, "User repository cannot be null.");
-        this.accountRepo = Objects.requireNonNull(accountRepo, "Account repository cannot be null.");
+        this(userRepo, accountRepo, null);
     }
 
-    public synchronized Customer registerCustomer(Customer customer) {
-        if (customer == null) {
-            throw new ValidationException("Customer cannot be null.");
-        }
+    public AuthService(UserRepository userRepo, AccountRepository accountRepo, TicketRepository ticketRepo) {
+        this.userRepo = Objects.requireNonNull(userRepo, "User repo cannot be null.");
+        this.accountRepo = Objects.requireNonNull(accountRepo, "Account repo cannot be null.");
+        this.ticketRepo = ticketRepo;
+    }
+
+    public void registerCustomer(Customer customer) {
+        Objects.requireNonNull(customer, "Customer cannot be null.");
         if (userRepo.findCustomerByPhone(customer.getPhoneNumber()).isPresent()) {
-            throw new UserAlreadyExistsException("Phone number already exists in Faribank system.");
+            throw new UserAlreadyExistsException("Phone number already registered: " + customer.getPhoneNumber());
         }
         if (userRepo.findCustomerByNationalCode(customer.getNationalCode()).isPresent()) {
-            throw new UserAlreadyExistsException("National code already exists in Faribank system.");
+            throw new UserAlreadyExistsException("National code already registered: " + customer.getNationalCode());
         }
-
         userRepo.saveCustomer(customer);
-        return customer;
+        dispatchKycTicket(customer, "Initial registration KYC request.");
+    }
+
+    public void updateCustomerKycData(String phone, String firstName, String lastName, String nationalId) {
+        Customer customer = userRepo.findCustomerByPhone(phone)
+                .orElseThrow(() -> new ValidationException("Customer not found: " + phone));
+        customer.setFirstName(firstName);
+        customer.setLastName(lastName);
+        customer.setNationalCode(nationalId);
+        customer.setKycStatus(KycStatus.PENDING);
+        dispatchKycTicket(customer, "Profile update KYC verification request.");
+    }
+
+    private void dispatchKycTicket(Customer customer, String reason) {
+        if (ticketRepo != null) {
+            String tickId = "KYC-" + TICKET_COUNTER.getAndIncrement();
+            String desc = reason + " Name: " + customer.getFullName()
+                    + " | NationalCode: " + customer.getNationalCode();
+            Ticket ticket = new Ticket(tickId, customer.getPhoneNumber(),
+                    TicketSection.AUTH, desc, Instant.now());
+            ticketRepo.save(ticket);
+        }
     }
 
     public Customer authenticateCustomer(String phone, String password) {
         Customer customer = userRepo.findCustomerByPhone(phone)
-                .orElseThrow(() -> new AuthenticationException(AUTH_ERR));
-
+                .orElseThrow(() -> new AuthenticationException("Invalid phone number or password."));
         if (!customer.getPassword().equals(password)) {
-            throw new AuthenticationException(AUTH_ERR);
+            throw new AuthenticationException("Invalid phone number or password.");
+        }
+        if (customer.isBlocked()) {
+            throw new AuthenticationException("Customer account is blocked.");
         }
         return customer;
     }
@@ -61,55 +89,57 @@ public class AuthService {
     public SupportUser authenticateSupport(String username, String password) {
         SupportUser support = userRepo.findSupportByUsername(username)
                 .orElseThrow(() -> new AuthenticationException("Invalid support username or password."));
-
         if (!support.getPassword().equals(password)) {
             throw new AuthenticationException("Invalid support username or password.");
+        }
+        if (support.isBlocked()) {
+            throw new AuthenticationException("Support account is blocked.");
         }
         return support;
     }
 
-    public synchronized void approveKyc(String phone) {
-        Customer customer = userRepo.findCustomerByPhone(phone)
-                .orElseThrow(() -> new ValidationException("Customer not found for KYC approval."));
+    public AdminUser authenticateAdmin(String username, String password) {
+        AdminUser admin = userRepo.findAdminByUsername(username)
+                .orElseThrow(() -> new AuthenticationException("Invalid admin username or password."));
+        if (!admin.getPassword().equals(password)) {
+            throw new AuthenticationException("Invalid admin username or password.");
+        }
+        if (admin.isBlocked()) {
+            throw new AuthenticationException("Admin account is blocked.");
+        }
+        return admin;
+    }
 
+    public void approveKyc(String phone) {
+        Customer customer = userRepo.findCustomerByPhone(phone)
+                .orElseThrow(() -> new ValidationException("Customer not found: " + phone));
         customer.setKycStatus(KycStatus.APPROVED);
-        customer.setRejectionReason("");
-
-        if (customer.getAccount() == null) {
-            String accNum = String.valueOf(accountCounter.incrementAndGet());
-            String cardNum = String.valueOf(cardCounter.incrementAndGet());
+        Account account = accountRepo.findByPhone(phone).orElseGet(() -> {
+            String accNum = String.valueOf(ACC_COUNTER.getAndIncrement());
+            String cardNum = "6037" + accNum + "1234";
             CreditCard card = new CreditCard(cardNum);
-            Account account = new Account(accNum, customer.getPhoneNumber(), card);
-
-            customer.setAccount(account);
-            accountRepo.save(account);
-        }
+            Account newAcc = new Account(accNum, phone, card);
+            accountRepo.save(newAcc);
+            return newAcc;
+        });
+        customer.setAccount(account);
     }
 
-    public synchronized void rejectKyc(String phone, String reason) {
-        Customer customer = userRepo.findCustomerByPhone(phone)
-                .orElseThrow(() -> new ValidationException("Customer not found for KYC rejection."));
+    public void rejectKyc(String phone) {
+        rejectKyc(phone, "Identity details could not be verified.");
+    }
 
-        if (reason == null || reason.trim().isEmpty()) {
-            throw new ValidationException("Rejection reason cannot be empty.");
-        }
+    public void rejectKyc(String phone, String reason) {
+        Customer customer = userRepo.findCustomerByPhone(phone)
+                .orElseThrow(() -> new ValidationException("Customer not found: " + phone));
         customer.setKycStatus(KycStatus.REJECTED);
-        customer.setRejectionReason(reason.trim());
-    }
-
-    public synchronized void updateCustomerKycData(String phone, String first,
-                                                   String last, String nationalId) {
-        Customer customer = userRepo.findCustomerByPhone(phone)
-                .orElseThrow(() -> new ValidationException("Customer not found."));
-
-        customer.setFirstName(first);
-        customer.setLastName(last);
-        customer.setNationalCode(nationalId);
-        customer.setKycStatus(KycStatus.PENDING);
-        customer.setRejectionReason("");
     }
 
     public List<Customer> getPendingKycRequests() {
         return userRepo.findCustomersByKyc(KycStatus.PENDING);
+    }
+
+    public List<Customer> getPendingKycCustomers() {
+        return getPendingKycRequests();
     }
 }

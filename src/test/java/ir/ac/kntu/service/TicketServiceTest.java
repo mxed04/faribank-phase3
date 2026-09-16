@@ -4,8 +4,10 @@ import ir.ac.kntu.domain.ticket.Ticket;
 import ir.ac.kntu.domain.ticket.TicketSection;
 import ir.ac.kntu.domain.ticket.TicketStatus;
 import ir.ac.kntu.domain.user.Customer;
-import ir.ac.kntu.exception.TicketNotFoundException;
-import ir.ac.kntu.exception.ValidationException;
+import ir.ac.kntu.domain.user.KycStatus;
+import ir.ac.kntu.domain.user.SupportSection;
+import ir.ac.kntu.domain.user.SupportUser;
+import ir.ac.kntu.exception.UnauthorizedSectionAccessException;
 import ir.ac.kntu.repository.AccountRepository;
 import ir.ac.kntu.repository.TicketRepository;
 import ir.ac.kntu.repository.UserRepository;
@@ -13,91 +15,105 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TicketServiceTest {
-    private UserRepository userRepo;
     private TicketRepository ticketRepo;
+    private UserRepository userRepo;
+    private AccountRepository accountRepo;
     private AuthService authService;
     private TicketService ticketService;
-    private Customer customer;
 
     @BeforeEach
     void setUp() {
-        userRepo = new UserRepository();
-        AccountRepository accountRepo = new AccountRepository();
         ticketRepo = new TicketRepository();
-        authService = new AuthService(userRepo, accountRepo);
-        ticketService = new TicketService(ticketRepo, userRepo);
-
-        customer = new Customer("Milad", "Mohammadi", "09121118899", "1234567899", "Milad@2024");
-        authService.registerCustomer(customer);
-        authService.approveKyc(customer.getPhoneNumber());
+        userRepo = new UserRepository();
+        accountRepo = new AccountRepository();
+        authService = new AuthService(userRepo, accountRepo, ticketRepo);
+        ticketService = new TicketService(ticketRepo, userRepo, authService);
     }
 
     @Test
-    void testCreateAndRetrieveUserTickets() {
-        Ticket t1 = ticketService.createTicket(
-                customer.getPhoneNumber(), TicketSection.TRANSFER, "Transfer was delayed.");
-        assertNotNull(t1);
-        assertEquals(TicketStatus.REGISTERED, t1.getStatus());
-        assertEquals("Transfer was delayed.", t1.getText());
+    void testAutomaticKycTicketCreationOnCustomerRegistration() {
+        Customer cust = new Customer("Ali", "Karimi", "09121112233", "1234567890", "Pass@1234");
+        authService.registerCustomer(cust);
 
-        List<Ticket> tickets = ticketService.getUserTickets(customer.getPhoneNumber());
+        List<Ticket> tickets = ticketRepo.findByPhone("09121112233");
         assertEquals(1, tickets.size());
-        assertEquals(t1.getTicketId(), tickets.get(0).getTicketId());
+        Ticket kycTicket = tickets.get(0);
+
+        assertTrue(kycTicket.isKycRequest());
+        assertEquals(TicketSection.AUTH, kycTicket.getSection());
+        assertEquals(TicketStatus.REGISTERED, kycTicket.getStatus());
+        assertTrue(kycTicket.getDescription().contains("Ali Karimi"));
     }
 
     @Test
-    void testOpenTicketsFilter() {
-        Ticket t1 = ticketService.createTicket(
-                customer.getPhoneNumber(), TicketSection.CONTACTS, "Cannot sync contact.");
-        Ticket t2 = ticketService.createTicket(
-                customer.getPhoneNumber(), TicketSection.SETTINGS, "Password issue.");
+    void testSupportCanOnlyViewAssignedSectionTickets() {
+        SupportUser operator = new SupportUser("Reza", "Rad", "supp01", "Pass@1234");
+        operator.setSections(Set.of(SupportSection.TRANSFER, SupportSection.SETTINGS));
+        userRepo.saveSupport(operator);
 
-        ticketService.replyTicket(t2.getTicketId(), "Resolved and closed.", TicketStatus.CLOSED);
+        ticketService.createTicket("09120000001", TicketSection.TRANSFER, "Transfer issue");
+        ticketService.createTicket("09120000002", TicketSection.SETTINGS, "Password issue");
+        ticketService.createTicket("09120000003", TicketSection.AUTH, "KYC issue");
 
-        List<Ticket> openTickets = ticketService.getOpenTickets(customer.getPhoneNumber());
-        assertEquals(1, openTickets.size());
-        assertEquals(t1.getTicketId(), openTickets.get(0).getTicketId());
+        List<Ticket> visibleTickets = ticketService.getTicketsForSupport("supp01");
+        assertEquals(2, visibleTickets.size());
+        for (Ticket tick : visibleTickets) {
+            assertTrue(tick.getSection() == TicketSection.TRANSFER || tick.getSection() == TicketSection.SETTINGS);
+            assertFalse(tick.getSection() == TicketSection.AUTH);
+        }
     }
 
     @Test
-    void testSupportReplyAndStatusUpdate() {
-        Ticket ticket = ticketService.createTicket(
-                customer.getPhoneNumber(), TicketSection.TRANSFER, "Double charge question.");
+    void testSupportUnauthorizedSectionFilterThrowsException() {
+        SupportUser operator = new SupportUser("Reza", "Rad", "supp01", "Pass@1234");
+        operator.setSections(Set.of(SupportSection.TRANSFER));
+        userRepo.saveSupport(operator);
 
-        ticketService.replyTicket(ticket.getTicketId(), "Refund processed.", TicketStatus.IN_PROGRESS);
-
-        Ticket updated = ticketService.getTicket(ticket.getTicketId());
-        assertEquals("Refund processed.", updated.getSupportReply());
-        assertEquals(TicketStatus.IN_PROGRESS, updated.getStatus());
+        assertThrows(UnauthorizedSectionAccessException.class, () ->
+                ticketService.filterTicketsForSupport("supp01", null, TicketSection.AUTH, null));
     }
 
     @Test
-    void testFilterTicketsMultiCriteria() {
-        ticketService.createTicket(customer.getPhoneNumber(), TicketSection.TRANSFER, "Query 1");
-        ticketService.createTicket(customer.getPhoneNumber(), TicketSection.CONTACTS, "Query 2");
+    void testApproveKycTicketCompletesCustomerKycAndIssuesAccount() {
+        Customer cust = new Customer("Sara", "Ahmadi", "09129998877", "9876543210", "Pass@1234");
+        authService.registerCustomer(cust);
+        assertEquals(KycStatus.PENDING, cust.getKycStatus());
 
-        List<Ticket> transfers = ticketService.filterTickets(
-                TicketStatus.REGISTERED, TicketSection.TRANSFER, customer.getPhoneNumber());
-        assertEquals(1, transfers.size());
+        SupportUser authOperator = new SupportUser("John", "Doe", "auth_supp", "Pass@1234");
+        authOperator.addSection(SupportSection.AUTH);
+        userRepo.saveSupport(authOperator);
 
-        List<Ticket> contacts = ticketService.filterTickets(
-                null, TicketSection.CONTACTS, null);
-        assertEquals(1, contacts.size());
+        Ticket kycTicket = ticketRepo.findByPhone("09129998877").get(0);
+        ticketService.approveKycTicket("auth_supp", kycTicket.getTicketId());
+
+        assertEquals(TicketStatus.APPROVED, kycTicket.getStatus());
+        assertEquals(KycStatus.APPROVED, cust.getKycStatus());
+        assertNotNull(cust.getAccount());
     }
 
     @Test
-    void testNonExistingTicketThrowsException() {
-        assertThrows(TicketNotFoundException.class, () ->
-                ticketService.getTicket("TCK-999999"));
-    }
+    void testRejectKycTicketClosesTicketAndRejectsCustomer() {
+        Customer cust = new Customer("Navid", "Kiyani", "09125556677", "1122334455", "Pass@1234");
+        authService.registerCustomer(cust);
 
-    @Test
-    void testEmptyTextThrowsValidationException() {
-        assertThrows(ValidationException.class, () ->
-                ticketService.createTicket(customer.getPhoneNumber(), TicketSection.SETTINGS, "   "));
+        SupportUser authOperator = new SupportUser("John", "Doe", "auth_supp", "Pass@1234");
+        authOperator.addSection(SupportSection.AUTH);
+        userRepo.saveSupport(authOperator);
+
+        Ticket kycTicket = ticketRepo.findByPhone("09125556677").get(0);
+        ticketService.rejectKycTicket("auth_supp", kycTicket.getTicketId(), "National ID card is unreadable.");
+
+        assertEquals(TicketStatus.CLOSED, kycTicket.getStatus());
+        assertEquals("National ID card is unreadable.", kycTicket.getReply());
+        assertEquals(KycStatus.REJECTED, cust.getKycStatus());
     }
 }
