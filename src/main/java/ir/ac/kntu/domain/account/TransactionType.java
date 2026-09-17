@@ -1,9 +1,12 @@
 package ir.ac.kntu.domain.account;
 
 /**
- * Categorization of financial transaction entries.
+ * Ledger transaction categories supported in Faribank.
  */
 public enum TransactionType {
     CHARGE,
-    TRANSFER
+    TRANSFER,
+    TRANSFER_IN,
+    TRANSFER_OUT,
+    SIM_CHARGE
 }
