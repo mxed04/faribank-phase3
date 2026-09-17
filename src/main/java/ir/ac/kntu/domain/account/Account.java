@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Bank account entity managing balance and ledger history.
+ * Bank account entity managing balance and ledger history with thread-safe operations.
  */
 public class Account {
     private final String accountNumber;
@@ -29,7 +29,7 @@ public class Account {
         this.ownerPhone = ownerPhone.trim();
         this.card = Objects.requireNonNull(card, "Card cannot be null.");
         this.balance = 0.0;
-        this.transactions = new ArrayList<>();
+        this.transactions = Collections.synchronizedList(new ArrayList<>());
     }
 
     public String getAccountNumber() {
@@ -52,12 +52,14 @@ public class Account {
         return card;
     }
 
-    public double getBalance() {
+    public synchronized double getBalance() {
         return balance;
     }
 
     public List<Transaction> getTransactions() {
-        return Collections.unmodifiableList(transactions);
+        synchronized (transactions) {
+            return List.copyOf(transactions);
+        }
     }
 
     public synchronized void charge(double amount, Transaction trx) {
@@ -104,7 +106,7 @@ public class Account {
         this.balance -= amount;
     }
 
-    public synchronized void addTransaction(Transaction trx) {
+    public void addTransaction(Transaction trx) {
         if (trx != null) {
             this.transactions.add(trx);
         }
