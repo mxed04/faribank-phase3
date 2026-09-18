@@ -225,6 +225,9 @@ public class TransferService {
     private Customer getApprovedCustomer(String phone) {
         Customer cust = userRepo.findCustomerByPhone(phone)
                 .orElseThrow(() -> new ValidationException("Customer not found: " + phone));
+        if (cust.isBlocked()) {
+            throw new ValidationException("Customer account is blocked: " + phone);
+        }
         if (cust.getKycStatus() != KycStatus.APPROVED) {
             throw new ValidationException("Customer must be KYC-approved: " + phone);
         }
