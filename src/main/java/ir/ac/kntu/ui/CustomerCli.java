@@ -1,255 +1,232 @@
 package ir.ac.kntu.ui;
 
+import ir.ac.kntu.domain.account.Account;
 import ir.ac.kntu.domain.account.Transaction;
 import ir.ac.kntu.domain.account.TransferReceipt;
 import ir.ac.kntu.domain.contact.Contact;
+import ir.ac.kntu.domain.fund.Fund;
 import ir.ac.kntu.domain.ticket.Ticket;
 import ir.ac.kntu.domain.ticket.TicketSection;
 import ir.ac.kntu.domain.user.Customer;
-import ir.ac.kntu.exception.FaribankException;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Scanner;
+import java.util.function.Function;
 
 /**
- * Console user interface managing customer banking workflows.
+ * Interactive customer CLI providing dashboard, transfers, funds, and paginated ledgers.
  */
 public class CustomerCli {
     private final BankServices services;
     private final ConsoleIo console;
+    private final Scanner scanner;
 
     public CustomerCli(BankServices services, ConsoleIo console) {
+        this(services, console, null);
+    }
+
+    public CustomerCli(BankServices services, ConsoleIo console, Scanner scanner) {
         this.services = Objects.requireNonNull(services);
         this.console = Objects.requireNonNull(console);
+        this.scanner = scanner;
     }
 
     public void runCustomerMenu(Customer customer) {
-        while (true) {
-            console.printTitle("Faribank - Customer Portal (" + customer.getFullName() + ")");
-            console.printMenu("1", "Account Management");
-            console.printMenu("2", "Contacts Book");
-            console.printMenu("3", "Fund Transfer");
-            console.printMenu("4", "Support Inquiries");
-            console.printMenu("5", "Account Settings");
-            console.printMenu("back", "Logout & Return");
+        start(customer);
+    }
 
-            String choice = console.readLine("Select Option");
-            if ("back".equalsIgnoreCase(choice) || "quit".equalsIgnoreCase(choice)) {
+    public void start(Customer customer) {
+        boolean active = true;
+        while (active) {
+            printCustomerMenu(customer);
+            String opt = readLine("Choice: ");
+            switch (opt) {
+                case "1" -> showAccountOverview(customer);
+                case "2" -> handleTransfersMenu(customer);
+                case "3" -> handleFundsMenu(customer);
+                case "4" -> handleContactsMenu(customer);
+                case "5" -> handleTicketsMenu(customer);
+                case "6" -> handleSettingsMenu(customer);
+                case "0" -> active = false;
+                default -> console.printError("Invalid menu choice.");
+            }
+        }
+    }
+
+    private void printCustomerMenu(Customer customer) {
+        console.printInfo("=== CUSTOMER DASHBOARD (" + customer.getFullName() + ") ===");
+        console.printInfo("1. Account Overview & Ledger");
+        console.printInfo("2. Multi-Channel Fund Transfer");
+        console.printInfo("3. Capital Investment Funds");
+        console.printInfo("4. Contact Address Book");
+        console.printInfo("5. Support Tickets");
+        console.printInfo("6. Account Settings");
+        console.printInfo("0. Sign Out");
+    }
+
+    private void showAccountOverview(Customer cust) {
+        Account acc = cust.getAccount();
+        console.printInfo("Account Number: " + acc.getAccountNumber());
+        console.printInfo("Card Number:    " + acc.getCreditCard().getCardNumber());
+        console.printInfo("Balance:        " + acc.getBalance() + " IRR");
+
+        List<Transaction> txs = acc.getTransactions();
+        paginate(txs, transaction -> String.format("[%s] Amt: %.1f | Fee: %.1f | %s",
+                transaction.getTimestamp(), transaction.getAmount(),
+                transaction.getFee(), transaction.getDestOwnerName()));
+    }
+
+    private void handleTransfersMenu(Customer cust) {
+        console.printInfo("=== MULTI-CHANNEL TRANSFER SWITCH ===");
+        console.printInfo("1. Card-to-Card (300 Fee) | 2. POL (2%) | 3. PAYA (2000 Fee) | 4. Fari-to-Fari (0 Fee)");
+        String choice = readLine("Select Channel (0 to cancel): ");
+        if ("0".equals(choice)) {
+            return;
+        }
+        try {
+            double amount = console.readDouble("Enter Amount (IRR): ");
+            TransferReceipt receipt = switch (choice) {
+                case "1" -> services.getTransferService().transferCardToCard(
+                        cust.getPhoneNumber(), readLine("Dest Card: "), amount);
+                case "2" -> services.getTransferService().transferPol(
+                        cust.getPhoneNumber(), readLine("Dest Account: "), amount);
+                case "3" -> services.getTransferService().transferPaya(
+                        cust.getPhoneNumber(), readLine("Dest Account: "), amount);
+                case "4" -> services.getTransferService().transferFariToFari(
+                        cust.getPhoneNumber(), readLine("Dest Account: "), amount);
+                default -> throw new IllegalArgumentException("Unknown channel selected.");
+            };
+            displayReceipt(receipt);
+        } catch (Exception ex) {
+            console.printError("Transfer Failed: " + ex.getMessage());
+        }
+    }
+
+    private void handleFundsMenu(Customer cust) {
+        console.printInfo("=== CAPITAL FUNDS ===");
+        console.printInfo("1. Open Savings | 2. Open Remaining | 3. Open Bonus | 4. Deposit | 5. Withdraw | 6. List");
+        String opt = readLine("Choice: ");
+        try {
+            executeFundChoice(cust, opt);
+        } catch (Exception ex) {
+            console.printError("Fund Error: " + ex.getMessage());
+        }
+    }
+
+    private void executeFundChoice(Customer cust, String opt) {
+        switch (opt) {
+            case "1" -> {
+                double deposit = console.readDouble("Deposit: ");
+                var savingsFund = services.getFundService().openSavingsFund(cust.getPhoneNumber(), deposit);
+                console.printSuccess("Savings Fund created: " + savingsFund.getFundId());
+            }
+            case "2" -> {
+                double deposit = console.readDouble("Deposit: ");
+                var remainingFund = services.getFundService().openRemainingFund(cust.getPhoneNumber(), deposit);
+                console.printSuccess("Remaining Fund created: " + remainingFund.getFundId());
+            }
+            case "3" -> {
+                double sum = console.readDouble("Capital: ");
+                int days = (int) console.readDouble("Days: ");
+                double rate = console.readDouble("Rate: ");
+                var bonusFund = services.getFundService().openBonusFund(cust.getPhoneNumber(), sum, days, rate);
+                console.printSuccess("Bonus Fund created: " + bonusFund.getFundId());
+            }
+            case "4" -> services.getFundService().depositToFund(readLine("Fund ID: "), console.readDouble("Amount: "));
+            case "5" -> services.getFundService().withdrawFromFund(readLine("Fund ID: "), console.readDouble("Amount: "));
+            case "6" -> {
+                List<Fund> funds = services.getFundService().getCustomerFunds(cust.getPhoneNumber());
+                paginate(funds, fund -> String.format("[%s] %s | Balance: %.1f",
+                        fund.getFundId(), fund.getFundType(), fund.getBalance()));
+            }
+            default -> console.printInfo("Exited fund menu.");
+        }
+    }
+
+    private void handleContactsMenu(Customer cust) {
+        List<Contact> contacts = services.getContactService().getContacts(cust.getPhoneNumber());
+        paginate(contacts, contact -> String.format("%s %s (%s)",
+                contact.getFirstName(), contact.getLastName(), contact.getPhoneNumber()));
+    }
+
+    private void handleTicketsMenu(Customer cust) {
+        console.printInfo("=== SUPPORT TICKETS ===");
+        console.printInfo("1. Open Ticket | 2. View History");
+        if ("1".equals(readLine("Choice: "))) {
+            TicketSection sec = TicketSection.valueOf(readLine("Section: "));
+            Ticket ticket = services.getTicketService().createTicket(
+                    cust.getPhoneNumber(), sec, readLine("Description: "));
+            console.printSuccess("Ticket created: " + ticket.getTicketId());
+        } else {
+            List<Ticket> tickets = services.getTicketService().getOpenTickets(cust.getPhoneNumber());
+            paginate(tickets, ticket -> String.format("[%s] %s | %s",
+                    ticket.getTicketId(), ticket.getSection(), ticket.getStatus()));
+        }
+    }
+
+    private void handleSettingsMenu(Customer cust) {
+        console.printInfo("=== SETTINGS ===");
+        console.printInfo("1. Change Password | 2. Set Card PIN | 3. Toggle Contacts");
+        String opt = readLine("Choice: ");
+        try {
+            if ("1".equals(opt)) {
+                services.getSettingsService().changePassword(cust.getPhoneNumber(), readLine("Old: "), readLine("New: "));
+                console.printSuccess("Password updated.");
+            } else if ("2".equals(opt)) {
+                services.getSettingsService().setCardPin(cust.getPhoneNumber(), readLine("4-Digit PIN: "));
+                console.printSuccess("PIN updated.");
+            } else if ("3".equals(opt)) {
+                services.getSettingsService().toggleContacts(cust.getPhoneNumber(), !cust.isContactsEnabled());
+                console.printSuccess("Contact transfers toggled.");
+            }
+        } catch (Exception ex) {
+            console.printError("Action Failed: " + ex.getMessage());
+        }
+    }
+
+    private <T> void paginate(List<T> items, Function<T, String> formatter) {
+        if (items == null || items.isEmpty()) {
+            console.printInfo("No records available.");
+            return;
+        }
+        PaginationHelper<T> pager = new PaginationHelper<>(items, 10);
+        while (true) {
+            console.printInfo(String.format("--- Page %d of %d ---", pager.getCurrentPage(), pager.getTotalPages()));
+            List<T> pageItems = pager.getPageItems();
+            for (int i = 0; i < pageItems.size(); i++) {
+                int index = (pager.getCurrentPage() - 1) * pager.getPageSize() + i + 1;
+                console.printInfo(index + ". " + formatter.apply(pageItems.get(i)));
+            }
+            if (pager.getTotalPages() <= 1) {
                 break;
             }
-
-            try {
-                handleCustomerChoice(choice, customer);
-            } catch (FaribankException ex) {
-                console.printError(ex.getMessage());
+            String cmd = readLine("[n] Next | [p] Prev | [q] Quit: ").toLowerCase();
+            if ("n".equals(cmd)) {
+                pager.nextPage();
+            } else if ("p".equals(cmd)) {
+                pager.previousPage();
+            } else if ("q".equals(cmd)) {
+                break;
             }
         }
     }
 
-    private void handleCustomerChoice(String choice, Customer customer) {
-        switch (choice) {
-            case "1" -> handleAccount(customer);
-            case "2" -> handleContacts(customer);
-            case "3" -> handleTransfer(customer);
-            case "4" -> handleTickets(customer);
-            case "5" -> handleSettings(customer);
-            default -> console.printError("Invalid action selected. Please try again.");
-        }
-    }
-
-    private void handleAccount(Customer customer) {
-        console.printTitle("Account Management");
-        console.printMenu("1", "View Balance");
-        console.printMenu("2", "Charge Account");
-        console.printMenu("3", "Transaction History");
-        console.printMenu("back", "Back");
-
-        String choice = console.readLine("Action");
-        if ("1".equals(choice)) {
-            double balance = services.getAccountService().getBalance(customer.getPhoneNumber());
-            console.printSuccess("Current Balance: " + balance + " IRR");
-        } else if ("2".equals(choice)) {
-            depositFunds(customer);
-        } else if ("3".equals(choice)) {
-            showTransactions(customer);
-        }
-    }
-
-    private void depositFunds(Customer customer) {
-        double amount = console.readDouble("Enter Deposit Amount");
-        if (amount > 0) {
-            Transaction chargeTx = services.getAccountService().chargeAccount(customer.getPhoneNumber(), amount);
-            console.printSuccess("Deposit successful. Tracking ID: " + chargeTx.getTrackingNumber());
-        }
-    }
-
-    private void showTransactions(Customer customer) {
-        List<Transaction> list = services.getAccountService().getTransactions(customer.getPhoneNumber());
-        if (list.isEmpty()) {
-            console.printInfo("No transactions recorded yet.");
-            return;
-        }
-        for (Transaction record : list) {
-            console.printInfo("[" + record.getType() + "] " + record.getTrackingNumber()
-                    + " | Amount: " + record.getAmount() + " | Fee: " + record.getFee()
-                    + " | Time: " + record.getTimestamp());
-        }
-    }
-
-    private void handleContacts(Customer customer) {
-        console.printTitle("Contacts Book");
-        console.printMenu("1", "List Contacts");
-        console.printMenu("2", "Add Contact");
-        console.printMenu("back", "Back");
-
-        String choice = console.readLine("Action");
-        if ("1".equals(choice)) {
-            listContacts(customer);
-        } else if ("2".equals(choice)) {
-            addContact(customer);
-        }
-    }
-
-    private void listContacts(Customer customer) {
-        List<Contact> list = services.getContactService().getContacts(customer.getPhoneNumber());
-        if (list.isEmpty()) {
-            console.printInfo("Address book is empty.");
-            return;
-        }
-        for (Contact contact : list) {
-            console.printInfo("- " + contact.getFullName());
-        }
-    }
-
-    private void addContact(Customer customer) {
-        String first = console.readLine("Contact First Name");
-        String last = console.readLine("Contact Last Name");
-        String phone = console.readLine("Contact Phone Number (09XXXXXXXXX)");
-        Contact contact = new Contact(first, last, phone);
-        services.getContactService().addContact(customer.getPhoneNumber(), contact);
-        console.printSuccess("Contact added successfully: " + contact.getFullName());
-    }
-
-    private void handleTransfer(Customer customer) {
-        console.printTitle("Fund Transfer (0.5% Fee)");
-        console.printMenu("1", "Transfer by Account Number");
-        console.printMenu("2", "Transfer to Contact");
-        console.printMenu("back", "Back");
-
-        String choice = console.readLine("Action");
-        if ("1".equals(choice)) {
-            transferToAccount(customer);
-        } else if ("2".equals(choice)) {
-            transferToContact(customer);
-        }
-    }
-
-    private void transferToAccount(Customer customer) {
-        String destAcc = console.readLine("Destination Account Number");
-        double amount = console.readDouble("Transfer Amount");
-        if (amount <= 0) {
-            return;
-        }
-
-        String confirm = console.readLine("Confirm transfer of " + amount + " IRR (Y/N)");
-        if ("Y".equalsIgnoreCase(confirm)) {
-            TransferReceipt receipt = services.getTransferService().transferByAccount(
-                    customer.getPhoneNumber(), destAcc, amount);
-            printReceipt(receipt);
-        }
-    }
-
-    private void transferToContact(Customer customer) {
-        String contactPhone = console.readLine("Contact Phone Number");
-        double amount = console.readDouble("Transfer Amount");
-        if (amount <= 0) {
-            return;
-        }
-
-        String confirm = console.readLine("Confirm transfer of " + amount + " IRR (Y/N)");
-        if ("Y".equalsIgnoreCase(confirm)) {
-            TransferReceipt receipt = services.getTransferService().transferByContact(
-                    customer.getPhoneNumber(), contactPhone, amount);
-            printReceipt(receipt);
-        }
-    }
-
-    private void printReceipt(TransferReceipt receipt) {
-        console.printTitle("Transfer Receipt");
-        console.printInfo("Tracking Number: " + receipt.getTrackingNumber());
-        console.printInfo("Source Account:  " + receipt.getSourceAccount());
-        console.printInfo("Dest Account:    " + receipt.getDestAccount());
+    private void displayReceipt(TransferReceipt receipt) {
+        console.printSuccess("Transfer Completed!");
+        console.printInfo("Tracking Ref:    " + receipt.getTrackingNumber());
+        console.printInfo("From Account:    " + receipt.getSourceAccount());
+        console.printInfo("To Account:      " + receipt.getDestAccount());
         console.printInfo("Recipient Name:  " + receipt.getDestOwnerName());
-        console.printInfo("Transfer Amount: " + receipt.getAmount() + " IRR");
-        console.printInfo("Calculated Fee:  " + receipt.getFee() + " IRR");
-        console.printInfo("Total Deduction: " + receipt.getTotalDeduction() + " IRR");
-        console.printInfo("Timestamp:       " + receipt.getTimestamp());
-        console.printSuccess("Transaction processed successfully.");
+        console.printInfo("Amount:          " + receipt.getAmount() + " IRR");
+        console.printInfo("Fee:             " + receipt.getFee() + " IRR");
+        console.printInfo("Total Deducted:  " + receipt.getTotalDeduction() + " IRR");
     }
 
-    private void handleTickets(Customer customer) {
-        console.printTitle("Support Inquiries");
-        console.printMenu("1", "Submit Support Ticket");
-        console.printMenu("2", "View Open Tickets");
-        console.printMenu("back", "Back");
-
-        String choice = console.readLine("Action");
-        if ("1".equals(choice)) {
-            submitTicket(customer);
-        } else if ("2".equals(choice)) {
-            viewOpenTickets(customer);
+    private String readLine(String prompt) {
+        if (scanner != null && scanner.hasNextLine()) {
+            return scanner.nextLine().trim();
         }
-    }
-
-    private void submitTicket(Customer customer) {
-        console.printInfo("Sections: 1) CONTACTS  2) TRANSFER  3) SETTINGS");
-        String secChoice = console.readLine("Select Section");
-        TicketSection section = switch (secChoice) {
-            case "1" -> TicketSection.CONTACTS;
-            case "2" -> TicketSection.TRANSFER;
-            default -> TicketSection.SETTINGS;
-        };
-        String text = console.readLine("Describe your issue");
-        Ticket ticket = services.getTicketService().createTicket(customer.getPhoneNumber(), section, text);
-        console.printSuccess("Ticket registered. ID: " + ticket.getTicketId());
-    }
-
-    private void viewOpenTickets(Customer customer) {
-        List<Ticket> openTickets = services.getTicketService().getOpenTickets(customer.getPhoneNumber());
-        if (openTickets.isEmpty()) {
-            console.printInfo("No active support tickets.");
-            return;
-        }
-        for (Ticket ticket : openTickets) {
-            console.printInfo("[" + ticket.getStatus() + "] (" + ticket.getSection() + ") ID: " + ticket.getTicketId());
-            console.printInfo("Text: " + ticket.getText());
-            if (!ticket.getSupportReply().isEmpty()) {
-                console.printInfo("Reply: " + ticket.getSupportReply());
-            }
-        }
-    }
-
-    private void handleSettings(Customer customer) {
-        console.printTitle("Account Settings");
-        console.printMenu("1", "Change Account Password");
-        console.printMenu("2", "Set 4-Digit Card PIN");
-        console.printMenu("3", "Toggle Contacts Feature");
-        console.printMenu("back", "Back");
-
-        String choice = console.readLine("Action");
-        if ("1".equals(choice)) {
-            String currPass = console.readLine("Current Password");
-            String newPass = console.readLine("New Strong Password");
-            services.getSettingsService().changePassword(customer.getPhoneNumber(), currPass, newPass);
-            console.printSuccess("Password updated successfully.");
-        } else if ("2".equals(choice)) {
-            String pin = console.readLine("Enter 4-digit PIN");
-            services.getSettingsService().setCardPin(customer.getPhoneNumber(), pin);
-            console.printSuccess("Credit card PIN configured successfully.");
-        } else if ("3".equals(choice)) {
-            boolean current = customer.isContactsEnabled();
-            services.getSettingsService().toggleContacts(customer.getPhoneNumber(), !current);
-            console.printSuccess("Contacts feature toggled to: " + (!current ? "ENABLED" : "DISABLED"));
-        }
+        return console.readLine(prompt);
     }
 }
