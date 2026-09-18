@@ -4,13 +4,17 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * Transfer receipt encapsulation presenting transaction confirmation data.
+ * Domain receipt encapsulating transfer output and transaction ledger reference.
  */
 public class TransferReceipt {
     private final Transaction transaction;
 
     public TransferReceipt(Transaction transaction) {
         this.transaction = Objects.requireNonNull(transaction, "Transaction cannot be null.");
+    }
+
+    public Transaction getTransaction() {
+        return transaction;
     }
 
     public String getTrackingNumber() {
@@ -38,7 +42,7 @@ public class TransferReceipt {
     }
 
     public double getTotalDeduction() {
-        return transaction.getTotalDeduction();
+        return transaction.getAmount() + transaction.getFee();
     }
 
     public Instant getTimestamp() {
