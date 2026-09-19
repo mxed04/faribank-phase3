@@ -42,6 +42,10 @@ public class BonusFund extends Fund {
         return interestPaid;
     }
 
+    public void setInterestPaid(boolean interestPaid) {
+        this.interestPaid = interestPaid;
+    }
+
     public boolean hasMatured(Instant currentInstant) {
         return currentInstant.isAfter(maturityDate) || currentInstant.equals(maturityDate);
     }

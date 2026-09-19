@@ -13,6 +13,7 @@ import ir.ac.kntu.service.AuthService;
 import ir.ac.kntu.service.ContactService;
 import ir.ac.kntu.service.FinancialReportService;
 import ir.ac.kntu.service.FundService;
+import ir.ac.kntu.service.JsonStorageService;
 import ir.ac.kntu.service.SearchService;
 import ir.ac.kntu.service.SettingsService;
 import ir.ac.kntu.service.SupportService;
@@ -20,7 +21,7 @@ import ir.ac.kntu.service.TicketService;
 import ir.ac.kntu.service.TransferService;
 
 /**
- * Service container wiring core infrastructure, multi-channel transfers, and financial analytics.
+ * Service container wiring core infrastructure, multi-channel transfers, and JSON persistence.
  */
 public class BankServices {
     private final AuthService authService;
@@ -35,6 +36,7 @@ public class BankServices {
     private final AdminBatchService adminBatchService;
     private final AdminCustomerService adminCustService;
     private final FinancialReportService reportService;
+    private final JsonStorageService storageService;
 
     public BankServices() {
         UserRepository userRepo = new UserRepository();
@@ -60,6 +62,7 @@ public class BankServices {
         this.adminBatchService = new AdminBatchService(payaRepo, accountRepo, this.fundService);
         this.adminCustService = new AdminCustomerService(userRepo);
         this.reportService = new FinancialReportService(accountRepo, userRepo);
+        this.storageService = new JsonStorageService(userRepo, accountRepo, fundRepo, ticketRepo);
     }
 
     public BankServices(AuthService authService, AccountService accountService,
@@ -77,6 +80,7 @@ public class BankServices {
         UserRepository userRepo = new UserRepository();
         AccountRepository accountRepo = new AccountRepository();
         FundRepository fundRepo = new FundRepository();
+        TicketRepository ticketRepo = new TicketRepository();
         PayaRepository payaRepo = new PayaRepository();
 
         this.fundService = new FundService(fundRepo, accountRepo, userRepo);
@@ -86,6 +90,7 @@ public class BankServices {
         this.adminBatchService = new AdminBatchService(payaRepo, accountRepo, this.fundService);
         this.adminCustService = new AdminCustomerService(userRepo);
         this.reportService = new FinancialReportService(accountRepo, userRepo);
+        this.storageService = new JsonStorageService(userRepo, accountRepo, fundRepo, ticketRepo);
     }
 
     public AuthService getAuthService() {
@@ -134,5 +139,9 @@ public class BankServices {
 
     public FinancialReportService getReportService() {
         return reportService;
+    }
+
+    public JsonStorageService getStorageService() {
+        return storageService;
     }
 }

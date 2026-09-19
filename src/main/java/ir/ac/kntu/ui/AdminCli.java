@@ -32,7 +32,9 @@ public class AdminCli {
         while (active) {
             console.printInfo("=== ADMINISTRATIVE CONSOLE (" + admin.getUsername() + ") ===");
             console.printInfo("1. Search Customers | 2. Block/Unblock | 3. Edit Profile");
-            console.printInfo("4. Settle Paya Queue | 5. Distribute Profits | 6. Daily Clearing | 0. Logout");
+            console.printInfo("4. Settle Paya Queue | 5. Distribute Profits | 6. Daily Clearing");
+            console.printInfo("7. Backup System State to JSON");
+            console.printInfo("8. Restore System State from JSON | 0. Logout");
 
             String opt = readLine("Choice: ");
             switch (opt) {
@@ -42,6 +44,8 @@ public class AdminCli {
                 case "4" -> handlePayaSettlement();
                 case "5" -> handleInterestPayout();
                 case "6" -> handleDailyClearing();
+                case "7" -> handleDataBackup();
+                case "8" -> handleDataRestore();
                 case "0" -> active = false;
                 default -> console.printError("Invalid option.");
             }
@@ -125,5 +129,25 @@ public class AdminCli {
             return scanner.nextLine().trim();
         }
         return console.readLine(prompt);
+    }
+
+    private void handleDataBackup() {
+        try {
+            String path = readLine("File path (e.g. data/backup.json): ");
+            services.getStorageService().exportToJsonFile(path.isEmpty() ? "data/backup.json" : path);
+            console.printSuccess("System state exported successfully to JSON.");
+        } catch (Exception ex) {
+            console.printError("Backup failed: " + ex.getMessage());
+        }
+    }
+
+    private void handleDataRestore() {
+        try {
+            String path = readLine("File path (e.g. data/backup.json): ");
+            services.getStorageService().importFromJsonFile(path.isEmpty() ? "data/backup.json" : path);
+            console.printSuccess("System state restored successfully from JSON.");
+        } catch (Exception ex) {
+            console.printError("Restore failed: " + ex.getMessage());
+        }
     }
 }
