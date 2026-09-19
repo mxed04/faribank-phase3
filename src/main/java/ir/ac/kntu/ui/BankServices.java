@@ -11,6 +11,7 @@ import ir.ac.kntu.service.AdminBatchService;
 import ir.ac.kntu.service.AdminCustomerService;
 import ir.ac.kntu.service.AuthService;
 import ir.ac.kntu.service.ContactService;
+import ir.ac.kntu.service.FinancialReportService;
 import ir.ac.kntu.service.FundService;
 import ir.ac.kntu.service.SearchService;
 import ir.ac.kntu.service.SettingsService;
@@ -19,7 +20,7 @@ import ir.ac.kntu.service.TicketService;
 import ir.ac.kntu.service.TransferService;
 
 /**
- * Service container wiring core infrastructure, multi-channel transfers, and admin batch ops.
+ * Service container wiring core infrastructure, multi-channel transfers, and financial analytics.
  */
 public class BankServices {
     private final AuthService authService;
@@ -33,6 +34,7 @@ public class BankServices {
     private final FundService fundService;
     private final AdminBatchService adminBatchService;
     private final AdminCustomerService adminCustService;
+    private final FinancialReportService reportService;
 
     public BankServices() {
         UserRepository userRepo = new UserRepository();
@@ -57,6 +59,7 @@ public class BankServices {
         this.searchService = new SearchService(userRepo, contactRepo);
         this.adminBatchService = new AdminBatchService(payaRepo, accountRepo, this.fundService);
         this.adminCustService = new AdminCustomerService(userRepo);
+        this.reportService = new FinancialReportService(accountRepo, userRepo);
     }
 
     public BankServices(AuthService authService, AccountService accountService,
@@ -82,6 +85,7 @@ public class BankServices {
         this.searchService = new SearchService(userRepo, new ContactRepository());
         this.adminBatchService = new AdminBatchService(payaRepo, accountRepo, this.fundService);
         this.adminCustService = new AdminCustomerService(userRepo);
+        this.reportService = new FinancialReportService(accountRepo, userRepo);
     }
 
     public AuthService getAuthService() {
@@ -126,5 +130,9 @@ public class BankServices {
 
     public AdminCustomerService getAdminCustomerService() {
         return adminCustService;
+    }
+
+    public FinancialReportService getReportService() {
+        return reportService;
     }
 }

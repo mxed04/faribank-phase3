@@ -5,6 +5,7 @@ import ir.ac.kntu.domain.account.Transaction;
 import ir.ac.kntu.domain.account.TransferReceipt;
 import ir.ac.kntu.domain.contact.Contact;
 import ir.ac.kntu.domain.fund.Fund;
+import ir.ac.kntu.domain.report.FinancialSummary;
 import ir.ac.kntu.domain.ticket.Ticket;
 import ir.ac.kntu.domain.ticket.TicketSection;
 import ir.ac.kntu.domain.user.Customer;
@@ -15,7 +16,7 @@ import java.util.Scanner;
 import java.util.function.Function;
 
 /**
- * Interactive customer CLI providing dashboard, transfers, funds, and paginated ledgers.
+ * Interactive customer CLI providing dashboard, transfers, funds, and financial analytics.
  */
 public class CustomerCli {
     private final BankServices services;
@@ -45,9 +46,10 @@ public class CustomerCli {
                 case "1" -> showAccountOverview(customer);
                 case "2" -> handleTransfersMenu(customer);
                 case "3" -> handleFundsMenu(customer);
-                case "4" -> handleContactsMenu(customer);
-                case "5" -> handleTicketsMenu(customer);
-                case "6" -> handleSettingsMenu(customer);
+                case "4" -> handleAnalyticsMenu(customer);
+                case "5" -> handleContactsMenu(customer);
+                case "6" -> handleTicketsMenu(customer);
+                case "7" -> handleSettingsMenu(customer);
                 case "0" -> active = false;
                 default -> console.printError("Invalid menu choice.");
             }
@@ -59,9 +61,10 @@ public class CustomerCli {
         console.printInfo("1. Account Overview & Ledger");
         console.printInfo("2. Multi-Channel Fund Transfer");
         console.printInfo("3. Capital Investment Funds");
-        console.printInfo("4. Contact Address Book");
-        console.printInfo("5. Support Tickets");
-        console.printInfo("6. Account Settings");
+        console.printInfo("4. Financial Analytics & Statement");
+        console.printInfo("5. Contact Address Book");
+        console.printInfo("6. Support Tickets");
+        console.printInfo("7. Account Settings");
         console.printInfo("0. Sign Out");
     }
 
@@ -71,10 +74,9 @@ public class CustomerCli {
         console.printInfo("Card Number:    " + acc.getCreditCard().getCardNumber());
         console.printInfo("Balance:        " + acc.getBalance() + " IRR");
 
-        List<Transaction> txs = acc.getTransactions();
-        paginate(txs, transaction -> String.format("[%s] Amt: %.1f | Fee: %.1f | %s",
-                transaction.getTimestamp(), transaction.getAmount(),
-                transaction.getFee(), transaction.getDestOwnerName()));
+        List<Transaction> records = acc.getTransactions();
+        paginate(records, record -> String.format("[%s] Amt: %.1f | Fee: %.1f | %s",
+                record.getTimestamp(), record.getAmount(), record.getFee(), record.getDestOwnerName()));
     }
 
     private void handleTransfersMenu(Customer cust) {
@@ -141,6 +143,22 @@ public class CustomerCli {
                         fund.getFundId(), fund.getFundType(), fund.getBalance()));
             }
             default -> console.printInfo("Exited fund menu.");
+        }
+    }
+
+    private void handleAnalyticsMenu(Customer cust) {
+        console.printInfo("=== FINANCIAL ANALYTICS ===");
+        FinancialSummary metrics = services.getReportService().calculateSummary(cust.getPhoneNumber(), null, null);
+        console.printInfo("Total Inflow:     " + metrics.getTotalInflow() + " IRR");
+        console.printInfo("Total Outflow:    " + metrics.getTotalOutflow() + " IRR");
+        console.printInfo("Total Fees Paid:  " + metrics.getTotalFees() + " IRR");
+        console.printInfo("Net Cash Flow:    " + metrics.getNetCashFlow() + " IRR");
+        console.printInfo("Total Records:    " + metrics.getRecordCount());
+
+        String opt = readLine("Export HTML Statement? (y/n): ");
+        if ("y".equalsIgnoreCase(opt)) {
+            String html = services.getReportService().generateHtmlStatement(cust.getPhoneNumber(), null, null);
+            console.printSuccess("HTML Statement compiled (" + html.length() + " bytes).");
         }
     }
 
