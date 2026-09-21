@@ -1,5 +1,6 @@
 package ir.ac.kntu.ui;
 
+import ir.ac.kntu.domain.user.AdminUser;
 import ir.ac.kntu.domain.user.Customer;
 import ir.ac.kntu.domain.user.KycStatus;
 import ir.ac.kntu.domain.user.SupportUser;
@@ -8,7 +9,7 @@ import ir.ac.kntu.exception.FaribankException;
 import java.util.Objects;
 
 /**
- * Top-level application controller managing entry, login, and registration.
+ * Top-level application controller managing entry, login, registration, and administrative access.
  */
 public class FaribankCli {
     private final BankServices services;
@@ -29,6 +30,7 @@ public class FaribankCli {
             console.printMenu("1", "Customer Login");
             console.printMenu("2", "Customer Registration");
             console.printMenu("3", "Support Operator Login");
+            console.printMenu("4", "Administrator Login");
             console.printMenu("quit", "Exit Faribank");
 
             String choice = console.readLine("Select Option");
@@ -39,8 +41,8 @@ public class FaribankCli {
 
             try {
                 processChoice(choice);
-            } catch (FaribankException ex) {
-                console.printError(ex.getMessage());
+            } catch (FaribankException exception) {
+                console.printError(exception.getMessage());
             }
         }
     }
@@ -50,6 +52,7 @@ public class FaribankCli {
             case "1" -> loginCustomer();
             case "2" -> registerCustomer();
             case "3" -> loginSupport();
+            case "4" -> loginAdmin();
             default -> console.printError("Invalid option. Please try again.");
         }
     }
@@ -94,10 +97,18 @@ public class FaribankCli {
     }
 
     private void loginSupport() {
-        String username = console.readLine("Operator Username (default: admin)");
-        String pass = console.readLine("Operator Password (default: Admin@1234)");
+        String username = console.readLine("Operator Username");
+        String pass = console.readLine("Operator Password");
         SupportUser user = services.getAuthService().authenticateSupport(username, pass);
         console.printSuccess("Welcome, Operator " + user.getFullName());
-        supportCli.runSupportMenu();
+        supportCli.runSupportMenu(user);
+    }
+
+    private void loginAdmin() {
+        String username = console.readLine("Admin Username (default: admin)");
+        String pass = console.readLine("Admin Password (default: Admin@1234)");
+        AdminUser admin = services.getAuthService().authenticateAdmin(username, pass);
+        console.printSuccess("Welcome, Administrator " + admin.getFullName());
+        new AdminCli(services, console).start(admin);
     }
 }

@@ -6,6 +6,7 @@ import ir.ac.kntu.domain.account.TransferReceipt;
 import ir.ac.kntu.domain.contact.Contact;
 import ir.ac.kntu.domain.fund.Fund;
 import ir.ac.kntu.domain.report.FinancialSummary;
+import ir.ac.kntu.domain.sim.ChargeReceipt;
 import ir.ac.kntu.domain.ticket.Ticket;
 import ir.ac.kntu.domain.ticket.TicketSection;
 import ir.ac.kntu.domain.user.Customer;
@@ -16,7 +17,7 @@ import java.util.Scanner;
 import java.util.function.Function;
 
 /**
- * Interactive customer CLI providing dashboard, transfers, funds, and financial analytics.
+ * Interactive customer CLI providing dashboard, transfers, funds, SIM recharge, and analytics.
  */
 public class CustomerCli {
     private final BankServices services;
@@ -50,6 +51,7 @@ public class CustomerCli {
                 case "5" -> handleContactsMenu(customer);
                 case "6" -> handleTicketsMenu(customer);
                 case "7" -> handleSettingsMenu(customer);
+                case "8" -> handleSimRechargeMenu(customer);
                 case "0" -> active = false;
                 default -> console.printError("Invalid menu choice.");
             }
@@ -65,6 +67,7 @@ public class CustomerCli {
         console.printInfo("5. Contact Address Book");
         console.printInfo("6. Support Tickets");
         console.printInfo("7. Account Settings");
+        console.printInfo("8. SIM Card Airtime Recharge");
         console.printInfo("0. Sign Out");
     }
 
@@ -203,6 +206,31 @@ public class CustomerCli {
         }
     }
 
+    private void handleSimRechargeMenu(Customer cust) {
+        console.printInfo("=== SIM CARD AIRTIME RECHARGE ===");
+        console.printInfo("1. Buy Airtime Recharge | 2. Query SIM Balance");
+        String choice = readLine("Choice: ");
+        try {
+            if ("1".equals(choice)) {
+                String target = readLine("Target Mobile (09XXXXXXXXX): ");
+                double amount = console.readDouble("Recharge Amount (IRR): ");
+                ChargeReceipt receipt = services.getSimService().buyCharge(cust.getPhoneNumber(), target, amount);
+                console.printSuccess("SIM Recharged Successfully!");
+                console.printInfo("Receipt ID:      " + receipt.getReceiptId());
+                console.printInfo("Target Phone:    " + receipt.getTargetPhone());
+                console.printInfo("Recharge Amount: " + receipt.getPureAmount() + " IRR");
+                console.printInfo("Tax (9%):        " + receipt.getTaxAmount() + " IRR");
+                console.printInfo("Total Deducted:  " + receipt.getTotalAmount() + " IRR");
+            } else if ("2".equals(choice)) {
+                String target = readLine("Mobile Phone (09XXXXXXXXX): ");
+                double balance = services.getSimService().getSimBalance(target);
+                console.printInfo("SIM Current Balance: " + balance + " IRR");
+            }
+        } catch (Exception exception) {
+            console.printError("SIM Action Failed: " + exception.getMessage());
+        }
+    }
+
     private <T> void paginate(List<T> items, Function<T, String> formatter) {
         if (items == null || items.isEmpty()) {
             console.printInfo("No records available.");
@@ -212,9 +240,9 @@ public class CustomerCli {
         while (true) {
             console.printInfo(String.format("--- Page %d of %d ---", pager.getCurrentPage(), pager.getTotalPages()));
             List<T> pageItems = pager.getPageItems();
-            for (int i = 0; i < pageItems.size(); i++) {
-                int index = (pager.getCurrentPage() - 1) * pager.getPageSize() + i + 1;
-                console.printInfo(index + ". " + formatter.apply(pageItems.get(i)));
+            for (int index = 0; index < pageItems.size(); index++) {
+                int number = (pager.getCurrentPage() - 1) * pager.getPageSize() + index + 1;
+                console.printInfo(number + ". " + formatter.apply(pageItems.get(index)));
             }
             if (pager.getTotalPages() <= 1) {
                 break;
