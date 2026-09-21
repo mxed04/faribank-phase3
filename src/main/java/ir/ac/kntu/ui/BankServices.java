@@ -1,14 +1,17 @@
 package ir.ac.kntu.ui;
 
+import ir.ac.kntu.domain.config.SystemSettings;
 import ir.ac.kntu.repository.AccountRepository;
 import ir.ac.kntu.repository.ContactRepository;
 import ir.ac.kntu.repository.FundRepository;
 import ir.ac.kntu.repository.PayaRepository;
+import ir.ac.kntu.repository.SimRepository;
 import ir.ac.kntu.repository.TicketRepository;
 import ir.ac.kntu.repository.UserRepository;
 import ir.ac.kntu.service.AccountService;
 import ir.ac.kntu.service.AdminBatchService;
 import ir.ac.kntu.service.AdminCustomerService;
+import ir.ac.kntu.service.AdminService;
 import ir.ac.kntu.service.AuthService;
 import ir.ac.kntu.service.ContactService;
 import ir.ac.kntu.service.FinancialReportService;
@@ -16,27 +19,30 @@ import ir.ac.kntu.service.FundService;
 import ir.ac.kntu.service.JsonStorageService;
 import ir.ac.kntu.service.SearchService;
 import ir.ac.kntu.service.SettingsService;
+import ir.ac.kntu.service.SimService;
 import ir.ac.kntu.service.SupportService;
 import ir.ac.kntu.service.TicketService;
 import ir.ac.kntu.service.TransferService;
 
 /**
- * Service container wiring core infrastructure, multi-channel transfers, and JSON persistence.
+ * Service container wiring core infrastructure, SIM services, administrative hierarchy, and persistence.
  */
 public class BankServices {
-    private final AuthService authService;
-    private final AccountService accountService;
-    private final TransferService transferService;
-    private final ContactService contactService;
-    private final TicketService ticketService;
-    private final SupportService supportService;
-    private final SettingsService settingsService;
-    private final SearchService searchService;
-    private final FundService fundService;
-    private final AdminBatchService adminBatchService;
-    private final AdminCustomerService adminCustService;
-    private final FinancialReportService reportService;
-    private final JsonStorageService storageService;
+    private AuthService authService;
+    private AccountService accountService;
+    private TransferService transferService;
+    private ContactService contactService;
+    private TicketService ticketService;
+    private SupportService supportService;
+    private SettingsService settingsService;
+    private SearchService searchService;
+    private FundService fundService;
+    private AdminBatchService adminBatchService;
+    private AdminCustomerService adminCustService;
+    private AdminService adminService;
+    private SimService simService;
+    private FinancialReportService reportService;
+    private JsonStorageService storageService;
 
     public BankServices() {
         UserRepository userRepo = new UserRepository();
@@ -46,22 +52,9 @@ public class BankServices {
         FundRepository fundRepo = new FundRepository();
         PayaRepository payaRepo = new PayaRepository();
 
-        this.ticketService = new TicketService(ticketRepo, userRepo);
-        this.authService = new AuthService(userRepo, accountRepo, ticketRepo);
-        this.accountService = new AccountService(accountRepo, userRepo);
-        this.fundService = new FundService(fundRepo, accountRepo, userRepo);
-
-        this.transferService = new TransferService(accountRepo, userRepo, contactRepo);
-        this.transferService.setFundService(this.fundService);
-        this.transferService.setPayaRepository(payaRepo);
-
-        this.contactService = new ContactService(contactRepo, userRepo);
-        this.supportService = new SupportService(userRepo, accountRepo);
-        this.settingsService = new SettingsService(userRepo);
-        this.searchService = new SearchService(userRepo, contactRepo);
-        this.adminBatchService = new AdminBatchService(payaRepo, accountRepo, this.fundService);
-        this.adminCustService = new AdminCustomerService(userRepo);
-        this.reportService = new FinancialReportService(accountRepo, userRepo);
+        initCoreServices(userRepo, accountRepo, ticketRepo);
+        initTransferInfrastructure(accountRepo, userRepo, contactRepo, payaRepo);
+        initAdministrativeServices(userRepo, accountRepo, fundRepo, payaRepo);
         this.storageService = new JsonStorageService(userRepo, accountRepo, fundRepo, ticketRepo);
     }
 
@@ -77,6 +70,38 @@ public class BankServices {
         this.ticketService = ticketService;
         this.supportService = supportService;
 
+        initCustomAuxiliaryServices();
+    }
+
+    private void initCoreServices(UserRepository userRepo, AccountRepository accountRepo,
+                                  TicketRepository ticketRepo) {
+        this.authService = new AuthService(userRepo, accountRepo, ticketRepo);
+        this.ticketService = new TicketService(ticketRepo, userRepo, this.authService);
+        this.accountService = new AccountService(accountRepo, userRepo);
+        this.settingsService = new SettingsService(userRepo);
+        this.supportService = new SupportService(userRepo, accountRepo);
+        this.adminService = new AdminService(userRepo);
+    }
+
+    private void initTransferInfrastructure(AccountRepository accountRepo, UserRepository userRepo,
+                                            ContactRepository contactRepo, PayaRepository payaRepo) {
+        this.contactService = new ContactService(contactRepo, userRepo);
+        this.searchService = new SearchService(userRepo, contactRepo);
+        this.transferService = new TransferService(accountRepo, userRepo, contactRepo);
+        this.transferService.setPayaRepository(payaRepo);
+    }
+
+    private void initAdministrativeServices(UserRepository userRepo, AccountRepository accountRepo,
+                                            FundRepository fundRepo, PayaRepository payaRepo) {
+        this.fundService = new FundService(fundRepo, accountRepo, userRepo);
+        this.transferService.setFundService(this.fundService);
+        this.simService = new SimService(new SimRepository(), accountRepo, userRepo, new SystemSettings());
+        this.adminBatchService = new AdminBatchService(payaRepo, accountRepo, this.fundService);
+        this.adminCustService = new AdminCustomerService(userRepo);
+        this.reportService = new FinancialReportService(accountRepo, userRepo);
+    }
+
+    private void initCustomAuxiliaryServices() {
         UserRepository userRepo = new UserRepository();
         AccountRepository accountRepo = new AccountRepository();
         FundRepository fundRepo = new FundRepository();
@@ -84,6 +109,8 @@ public class BankServices {
         PayaRepository payaRepo = new PayaRepository();
 
         this.fundService = new FundService(fundRepo, accountRepo, userRepo);
+        this.adminService = new AdminService(userRepo);
+        this.simService = new SimService(new SimRepository(), accountRepo, userRepo, new SystemSettings());
         this.transferService.setFundService(this.fundService);
         this.transferService.setPayaRepository(payaRepo);
         this.searchService = new SearchService(userRepo, new ContactRepository());
@@ -135,6 +162,14 @@ public class BankServices {
 
     public AdminCustomerService getAdminCustomerService() {
         return adminCustService;
+    }
+
+    public AdminService getAdminService() {
+        return adminService;
+    }
+
+    public SimService getSimService() {
+        return simService;
     }
 
     public FinancialReportService getReportService() {
