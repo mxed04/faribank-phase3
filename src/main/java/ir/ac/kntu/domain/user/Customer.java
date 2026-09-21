@@ -84,11 +84,11 @@ public class Customer extends User {
         this.contactsEnabled = enabled;
     }
 
-    public List<String> getRecentAccounts() {
-        return Collections.unmodifiableList(recentAccounts);
+    public synchronized List<String> getRecentAccounts() {
+        return Collections.unmodifiableList(new ArrayList<>(recentAccounts));
     }
 
-    public void addRecentAccount(String targetAccount) {
+    public synchronized void addRecentAccount(String targetAccount) {
         if (targetAccount == null || targetAccount.isBlank()) {
             return;
         }
