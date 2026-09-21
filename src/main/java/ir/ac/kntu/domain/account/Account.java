@@ -1,85 +1,114 @@
 package ir.ac.kntu.domain.account;
 
+import ir.ac.kntu.exception.InsufficientFundsException;
 import ir.ac.kntu.exception.ValidationException;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
- * Customer banking account managing balance, card, and transaction ledger.
+ * Bank account entity managing balance and ledger history with thread-safe operations.
  */
 public class Account {
     private final String accountNumber;
-    private final String ownerPhoneNumber;
+    private final String ownerPhone;
+    private final CreditCard card;
     private double balance;
-    private final CreditCard creditCard;
     private final List<Transaction> transactions;
 
-    public Account(String accountNumber, String ownerPhoneNumber, CreditCard creditCard) {
-        if (accountNumber == null || accountNumber.isBlank()) {
+    public Account(String accountNumber, String ownerPhone, CreditCard card) {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) {
             throw new ValidationException("Account number cannot be empty.");
         }
-        if (ownerPhoneNumber == null || ownerPhoneNumber.isBlank()) {
-            throw new ValidationException("Owner phone number cannot be empty.");
+        if (ownerPhone == null || ownerPhone.trim().isEmpty()) {
+            throw new ValidationException("Owner phone cannot be empty.");
         }
         this.accountNumber = accountNumber.trim();
-        this.ownerPhoneNumber = ownerPhoneNumber.trim();
-        this.creditCard = creditCard;
+        this.ownerPhone = ownerPhone.trim();
+        this.card = Objects.requireNonNull(card, "Card cannot be null.");
         this.balance = 0.0;
-        this.transactions = new ArrayList<>();
+        this.transactions = Collections.synchronizedList(new ArrayList<>());
     }
 
     public String getAccountNumber() {
         return accountNumber;
     }
 
-    public String getOwnerPhoneNumber() {
-        return ownerPhoneNumber;
+    public String getOwnerPhone() {
+        return ownerPhone;
     }
 
-    public double getBalance() {
-        return balance;
+    public String getOwnerPhoneNumber() {
+        return ownerPhone;
+    }
+
+    public CreditCard getCard() {
+        return card;
     }
 
     public CreditCard getCreditCard() {
-        return creditCard;
+        return card;
+    }
+
+    public synchronized double getBalance() {
+        return balance;
     }
 
     public List<Transaction> getTransactions() {
-        return Collections.unmodifiableList(transactions);
+        synchronized (transactions) {
+            return List.copyOf(transactions);
+        }
     }
 
-    public void charge(double amount, Transaction chargeTx) {
+    public synchronized void charge(double amount, Transaction trx) {
         if (amount <= 0) {
-            throw new ValidationException("Charge amount must be strictly positive.");
+            throw new ValidationException("Charge amount must be positive.");
         }
         this.balance += amount;
-        if (chargeTx != null) {
-            transactions.add(0, chargeTx);
+        if (trx != null) {
+            this.transactions.add(trx);
         }
     }
 
-    public void debit(double totalAmount, Transaction transferTx) {
-        if (totalAmount <= 0) {
-            throw new ValidationException("Debit amount must be strictly positive.");
-        }
-        if (this.balance < totalAmount) {
-            throw new ValidationException("Insufficient funds.");
-        }
-        this.balance -= totalAmount;
-        if (transferTx != null) {
-            transactions.add(0, transferTx);
-        }
+    public synchronized void credit(double amount, Transaction trx) {
+        charge(amount, trx);
     }
 
-    public void credit(double amount, Transaction incomingTx) {
+    public synchronized void debit(double amount, Transaction trx) {
         if (amount <= 0) {
-            throw new ValidationException("Credit amount must be strictly positive.");
+            throw new ValidationException("Debit amount must be positive.");
+        }
+        if (amount > this.balance) {
+            throw new InsufficientFundsException("Insufficient funds in account.");
+        }
+        this.balance -= amount;
+        if (trx != null) {
+            this.transactions.add(trx);
+        }
+    }
+
+    public synchronized void deposit(double amount) {
+        if (amount <= 0) {
+            throw new ValidationException("Deposit amount must be positive.");
         }
         this.balance += amount;
-        if (incomingTx != null) {
-            transactions.add(0, incomingTx);
+    }
+
+    public synchronized void withdraw(double amount) {
+        if (amount <= 0) {
+            throw new ValidationException("Withdraw amount must be positive.");
+        }
+        if (amount > this.balance) {
+            throw new InsufficientFundsException("Insufficient funds in account.");
+        }
+        this.balance -= amount;
+    }
+
+    public void addTransaction(Transaction trx) {
+        if (trx != null) {
+            this.transactions.add(trx);
         }
     }
 }

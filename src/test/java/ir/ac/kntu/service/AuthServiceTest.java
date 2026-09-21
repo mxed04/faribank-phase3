@@ -1,5 +1,6 @@
 package ir.ac.kntu.service;
 
+import ir.ac.kntu.domain.user.AdminUser;
 import ir.ac.kntu.domain.user.Customer;
 import ir.ac.kntu.domain.user.KycStatus;
 import ir.ac.kntu.domain.user.SupportUser;
@@ -10,7 +11,9 @@ import ir.ac.kntu.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AuthServiceTest {
     private UserRepository userRepo;
@@ -26,71 +29,92 @@ class AuthServiceTest {
 
     @Test
     void testCustomerRegistrationAndDuplicateRejections() {
-        Customer customer = new Customer("Ali", "Rad", "09121112233", "0011223344", "Pass@1234");
-        Customer saved = authService.registerCustomer(customer);
-        assertNotNull(saved);
-        assertEquals(KycStatus.PENDING, saved.getKycStatus());
+        Customer cust1 = new Customer("Ali", "Rezaei", "09121111111", "1234567890", "Pass@1234");
+        authService.registerCustomer(cust1);
 
-        Customer dupPhone = new Customer("Sara", "Moein", "09121112233", "9988776655", "Pass@1234");
-        assertThrows(UserAlreadyExistsException.class, () -> authService.registerCustomer(dupPhone));
+        Customer duplicatePhone = new Customer("Sara", "Rad", "09121111111", "9876543210", "Pass@1234");
+        assertThrows(UserAlreadyExistsException.class, () -> authService.registerCustomer(duplicatePhone));
 
-        Customer dupNid = new Customer("Sara", "Moein", "09129998877", "0011223344", "Pass@1234");
-        assertThrows(UserAlreadyExistsException.class, () -> authService.registerCustomer(dupNid));
+        Customer duplicateNatId = new Customer("Sara", "Rad", "09122222222", "1234567890", "Pass@1234");
+        assertThrows(UserAlreadyExistsException.class, () -> authService.registerCustomer(duplicateNatId));
     }
 
     @Test
     void testCustomerAuthenticationFlow() {
-        Customer customer = new Customer("Reza", "Karimi", "09123334455", "1122334455", "Secret@2024");
-        authService.registerCustomer(customer);
+        Customer cust = new Customer("Ali", "Rezaei", "09121111111", "1234567890", "Pass@1234");
+        authService.registerCustomer(cust);
 
-        Customer authenticated = authService.authenticateCustomer("09123334455", "Secret@2024");
-        assertEquals("Reza Karimi", authenticated.getFullName());
-
-        assertThrows(AuthenticationException.class, () ->
-                authService.authenticateCustomer("09123334455", "WrongPassword@1"));
+        Customer authenticated = authService.authenticateCustomer("09121111111", "Pass@1234");
+        assertNotNull(authenticated);
 
         assertThrows(AuthenticationException.class, () ->
-                authService.authenticateCustomer("09120000000", "Secret@2024"));
+                authService.authenticateCustomer("09121111111", "Wrong@Pass"));
+        assertThrows(AuthenticationException.class, () ->
+                authService.authenticateCustomer("09129999999", "Pass@1234"));
+
+        cust.setBlocked(true);
+        assertThrows(AuthenticationException.class, () ->
+                authService.authenticateCustomer("09121111111", "Pass@1234"));
     }
 
     @Test
-    void testSupportUserDefaultAuthentication() {
-        SupportUser admin = authService.authenticateSupport("admin", "Admin@1234");
-        assertEquals("Admin Support", admin.getFullName());
+    void testDefaultAdminAuthentication() {
+        AdminUser rootAdmin = authService.authenticateAdmin("admin", "Admin@1234");
+        assertNotNull(rootAdmin);
+        assertEquals("admin", rootAdmin.getUsername());
 
         assertThrows(AuthenticationException.class, () ->
-                authService.authenticateSupport("admin", "WrongPass@1"));
+                authService.authenticateAdmin("admin", "WrongPass@1"));
     }
 
     @Test
-    void testKycApprovalGeneratesAccountAndCard() {
-        Customer customer = new Customer("Mehdi", "Farid", "09124445566", "2233445566", "Mehdi@9988");
-        authService.registerCustomer(customer);
-        assertEquals(1, authService.getPendingKycRequests().size());
+    void testSupportUserAuthentication() {
+        SupportUser operator = new SupportUser("John", "Doe", "supp01", "Str0ng@Pass");
+        userRepo.saveSupport(operator);
 
-        authService.approveKyc("09124445566");
+        SupportUser authenticated = authService.authenticateSupport("supp01", "Str0ng@Pass");
+        assertNotNull(authenticated);
+        assertEquals("supp01", authenticated.getUsername());
 
-        Customer authenticated = authService.authenticateCustomer("09124445566", "Mehdi@9988");
-        assertEquals(KycStatus.APPROVED, authenticated.getKycStatus());
-        assertNotNull(authenticated.getAccount());
-        assertNotNull(authenticated.getAccount().getCreditCard());
-        assertTrue(accountRepo.exists(authenticated.getAccount().getAccountNumber()));
-        assertEquals(0, authService.getPendingKycRequests().size());
+        assertThrows(AuthenticationException.class, () ->
+                authService.authenticateSupport("supp01", "Invalid@Pass"));
+
+        operator.setBlocked(true);
+        assertThrows(AuthenticationException.class, () ->
+                authService.authenticateSupport("supp01", "Str0ng@Pass"));
     }
 
     @Test
-    void testKycRejectionAndResubmission() {
-        Customer customer = new Customer("Nima", "Ahmadi", "09125556677", "3344556677", "Nima@4321");
-        authService.registerCustomer(customer);
+    void testKycApprovalAndAccountIssuance() {
+        Customer cust = new Customer("Reza", "Karimi", "09123333333", "1122334455", "Pass@1234");
+        authService.registerCustomer(cust);
+        assertEquals(KycStatus.PENDING, cust.getKycStatus());
 
-        authService.rejectKyc("09125556677", "National code does not match ID document.");
+        authService.approveKyc("09123333333");
+        assertEquals(KycStatus.APPROVED, cust.getKycStatus());
+        assertNotNull(accountRepo.findByPhone("09123333333").orElse(null));
+    }
 
-        Customer authenticated = authService.authenticateCustomer("09125556677", "Nima@4321");
-        assertEquals(KycStatus.REJECTED, authenticated.getKycStatus());
-        assertEquals("National code does not match ID document.", authenticated.getRejectionReason());
+    @Test
+    void testKycRejectionFlow() {
+        Customer cust = new Customer("Mina", "Alavi", "09124444444", "9988776655", "Pass@1234");
+        authService.registerCustomer(cust);
 
-        authService.updateCustomerKycData("09125556677", "Nima", "Ahmadi", "4455667788");
-        assertEquals(KycStatus.PENDING, authenticated.getKycStatus());
-        assertEquals("", authenticated.getRejectionReason());
+        authService.rejectKyc("09124444444");
+        assertEquals(KycStatus.REJECTED, cust.getKycStatus());
+    }
+
+    @Test
+    void testUpdateCustomerKycData() {
+        Customer cust = new Customer("Hassan", "Rad", "09125555555", "5544332211", "Pass@1234");
+        authService.registerCustomer(cust);
+        authService.approveKyc("09125555555");
+        assertEquals(KycStatus.APPROVED, cust.getKycStatus());
+
+        authService.updateCustomerKycData("09125555555", "Hossein", "Radfar", "9988112233");
+        assertEquals("Hossein", cust.getFirstName());
+        assertEquals("Radfar", cust.getLastName());
+        assertEquals("9988112233", cust.getNationalCode());
+        assertEquals(KycStatus.PENDING, cust.getKycStatus());
     }
 }

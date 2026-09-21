@@ -1,49 +1,75 @@
 package ir.ac.kntu.repository;
 
 import ir.ac.kntu.domain.ticket.Ticket;
-import ir.ac.kntu.exception.ValidationException;
+import ir.ac.kntu.domain.ticket.TicketSection;
+import ir.ac.kntu.domain.ticket.TicketStatus;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory repository tracking customer support tickets.
+ * Thread-safe repository managing tickets and unified KYC requests.
  */
 public class TicketRepository {
-    private final Map<String, Ticket> store = new ConcurrentHashMap<>();
+    private final Map<String, Ticket> ticketsById = new ConcurrentHashMap<>();
 
     public synchronized void save(Ticket ticket) {
-        if (ticket == null) {
-            throw new ValidationException("Ticket cannot be null.");
-        }
-        store.put(ticket.getTicketId(), ticket);
+        ticketsById.put(ticket.getTicketId(), ticket);
     }
 
     public Optional<Ticket> findById(String ticketId) {
         if (ticketId == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(store.get(ticketId.trim()));
+        return Optional.ofNullable(ticketsById.get(ticketId.trim()));
     }
 
     public List<Ticket> findByPhone(String phone) {
         if (phone == null) {
-            return List.of();
+            return Collections.emptyList();
         }
-        List<Ticket> list = new ArrayList<>();
-        for (Ticket ticket : store.values()) {
-            if (ticket.getUserPhoneNumber().equalsIgnoreCase(phone.trim())) {
-                list.add(ticket);
+        List<Ticket> matches = new ArrayList<>();
+        for (Ticket tick : ticketsById.values()) {
+            if (tick.getUserPhone().equals(phone.trim())) {
+                matches.add(tick);
             }
         }
-        return Collections.unmodifiableList(list);
+        return Collections.unmodifiableList(matches);
+    }
+
+    public List<Ticket> findBySections(Set<TicketSection> allowedSections) {
+        if (allowedSections == null || allowedSections.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Ticket> matches = new ArrayList<>();
+        for (Ticket tick : ticketsById.values()) {
+            if (allowedSections.contains(tick.getSection())) {
+                matches.add(tick);
+            }
+        }
+        return Collections.unmodifiableList(matches);
     }
 
     public List<Ticket> findAll() {
-        return List.copyOf(store.values());
+        return Collections.unmodifiableList(new ArrayList<>(ticketsById.values()));
+    }
+
+    public Optional<Ticket> findPendingKycByPhone(String phone) {
+        if (phone == null) {
+            return Optional.empty();
+        }
+        for (Ticket tick : ticketsById.values()) {
+            if (tick.isKycRequest() && tick.getUserPhone().equals(phone.trim())
+                    && (tick.getStatus() == TicketStatus.REGISTERED
+                    || tick.getStatus() == TicketStatus.IN_PROGRESS)) {
+                return Optional.of(tick);
+            }
+        }
+        return Optional.empty();
     }
 }

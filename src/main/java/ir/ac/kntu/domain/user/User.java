@@ -3,17 +3,19 @@ package ir.ac.kntu.domain.user;
 import ir.ac.kntu.exception.ValidationException;
 
 /**
- * Base abstract user domain entity.
+ * Abstract base user class for customers, support staff, and administrators.
  */
 public abstract class User {
     private String firstName;
     private String lastName;
     private String password;
+    private boolean blocked;
 
-    protected User(String firstName, String lastName, String password) {
+    public User(String firstName, String lastName, String password) {
         setFirstName(firstName);
         setLastName(lastName);
         setPassword(password);
+        this.blocked = false;
     }
 
     public String getFirstName() {
@@ -51,5 +53,13 @@ public abstract class User {
             throw new ValidationException("Password cannot be empty.");
         }
         this.password = password;
+    }
+
+    public boolean isBlocked() {
+        return blocked;
+    }
+
+    public void setBlocked(boolean blocked) {
+        this.blocked = blocked;
     }
 }
